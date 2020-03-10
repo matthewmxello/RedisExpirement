@@ -1,0 +1,11 @@
+bin
+obj
+Dockerfile*
+.git
+.gitignore
+README.md
+LICENSE
+.vs
+.vscode
+.dockerignore
+RedisExpirement.sln.DotSettings*
