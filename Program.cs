@@ -25,9 +25,12 @@ namespace RedisExpirement {
 
             Console.WriteLine ("List Testing");
             PerformanceTesting.TimeOperation ("Insert all data into a list", list.AddAllRecords);
-            PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", list.LookupRecordsSequentially);
+            PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", list.LookupRecord);
 
             Console.WriteLine ("++++++++++============================================++++++++++");
+
+            Console.WriteLine ($"Removing list id: {list.Identifier}");
+            cache.KeyDelete (list.Identifier);
 
             //     Console.WriteLine ("Sorted Set Testing");
             //     PerformanceTesting.TimeOperation ("Insert all data into a sorted set", set.AddAllRecords);
@@ -53,10 +56,19 @@ namespace RedisExpirement {
                 Console.WriteLine ($"Testing {message} - Elapsed = {sw.Elapsed}");
                 return sw.Elapsed;
             }
+
+            internal static TimeSpan TimeOperation (string message, Func < int, (LookupRecord, LookupRecord) > func) {
+                var sw = Stopwatch.StartNew ();
+                func (450000);
+                sw.Stop ();
+
+                Console.WriteLine ($"Testing {message} - Elapsed = {sw.Elapsed}");
+                return sw.Elapsed;
+            }
         }
 
         public abstract class Redis {
-            protected string Identifier { get; set; }
+            public string Identifier { get; set; }
             protected long[] Records { get; set; }
             protected IDatabase Cache { get; set; }
 
@@ -67,16 +79,25 @@ namespace RedisExpirement {
             }
 
             public abstract void AddAllRecords ();
-            public abstract void LookupRecord (int index);
 
             // ensure first and prev portfolios work
             // test first - 1 && last + 1
 
             // 500000
-            public void LookupRecordsSequentially () {
-                LookupRecord (299997);
-                LookupRecord (299999);
-                LookupRecord (299999);
+            //     public void LookupRecordsSequentially () {
+            //         LookupRecord (299997);
+            //         LookupRecord (299999);
+            //         LookupRecord (299999);
+            //     }
+        }
+
+        public class LookupRecord {
+            public int Index { get; set; }
+            public RedisValue Value { get; set; }
+
+            public LookupRecord (RedisValue value, int index) {
+                Value = value;
+                Index = index;
             }
         }
 
@@ -88,11 +109,11 @@ namespace RedisExpirement {
                 Cache.ListRightPush (Identifier, redisValues);
             }
 
-            public override (RedisValue prev, RedisValue next) LookupRecord (int index) {
+            public (LookupRecord prev, LookupRecord next) LookupRecord (int index) {
                 var listLength = Cache.ListLength (Identifier);
 
-                // if (index < 0 || index > listLength)
-                // throw new ArgumentException ("index out of range");
+                if (index < 0 || index > listLength)
+                    throw new ArgumentException ("index out of range");
 
                 // var items = new RedisValue[];
                 // if (index == 0) {
@@ -103,10 +124,19 @@ namespace RedisExpirement {
                 //     return (items[0], RedisValue.Null);
                 // }
 
-                var items = Cache.ListRange (Identifier, index - 1, index + 1);
+                // this function would actually have to return prev and next indexes also
+
+                int startRange = index == 0 ? 0 : index - 1;
+                int endRange = index == listLength ? -1 : index + 1;
+                var items = Cache.ListRange (Identifier, startRange, endRange);
                 RedisValue prev = index == 0 ? RedisValue.Null : items.First ();
                 RedisValue next = index == listLength ? RedisValue.Null : items.Last ();
-                return (prev, next);
+                Console.WriteLine ($"Current index: {index}");
+                Console.WriteLine ($"Prev index: {index - 1}");
+                Console.WriteLine ($"Prev value: {prev}");
+                Console.WriteLine ($"Next index: {index + 1}");
+                Console.WriteLine ($"Next value: {next}");
+                return (new LookupRecord (prev, index - 1), new LookupRecord (next, index + 1));
 
                 // if first
                 // prev should be null & next should be good
