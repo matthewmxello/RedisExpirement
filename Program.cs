@@ -18,20 +18,20 @@ namespace RedisExpirement {
             FlushAllDbs (redisConnection);
 
             var cache = redis.GetDatabase ();
-            var data = new MockedData (300000);
+            var data = new MockedData (500000);
 
             var list = new RedisList (Guid.NewGuid ().ToString (), cache, data);
-            var set = new RedisSortedSet (Guid.NewGuid ().ToString (), cache, data);
+            // var set = new RedisSortedSet (Guid.NewGuid ().ToString (), cache, data);
 
             Console.WriteLine ("List Testing");
             PerformanceTesting.TimeOperation ("Insert all data into a list", list.AddAllRecords);
-            // PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", list.LookupRecordsSequentially);
+            PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", list.LookupRecordsSequentially);
 
             Console.WriteLine ("++++++++++============================================++++++++++");
 
-            Console.WriteLine ("Sorted Set Testing");
-            // PerformanceTesting.TimeOperation ("Insert all data into a sorted set", set.AddAllRecords);
-            // PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", set.LookupRecordsSequentially);
+            //     Console.WriteLine ("Sorted Set Testing");
+            //     PerformanceTesting.TimeOperation ("Insert all data into a sorted set", set.AddAllRecords);
+            //     PerformanceTesting.TimeOperation ("Lookup all records sequentially - one by one", set.LookupRecordsSequentially);
         }
 
         public static void FlushAllDbs (string redisConnection) {
@@ -69,9 +69,14 @@ namespace RedisExpirement {
             public abstract void AddAllRecords ();
             public abstract void LookupRecord (int index);
 
+            // ensure first and prev portfolios work
+            // test first - 1 && last + 1
+
+            // 500000
             public void LookupRecordsSequentially () {
-                for (int i = 0; i < Records.Length; i++)
-                    LookupRecord (i);
+                LookupRecord (299997);
+                LookupRecord (299999);
+                LookupRecord (299999);
             }
         }
 
@@ -79,27 +84,53 @@ namespace RedisExpirement {
             public RedisList (string identifier, IDatabase cache, MockedData data) : base (identifier, cache, data) { }
 
             public override void AddAllRecords () {
-                for (var i = 0; i < Records.Length; i++)
-                    Cache.ListRightPush (Identifier, Records[i]);
+                var redisValues = Array.ConvertAll (Records, item => (RedisValue) item);
+                Cache.ListRightPush (Identifier, redisValues);
             }
 
-            public override void LookupRecord (int index) {
-                Cache.ListGetByIndex (Identifier, index);
+            public override (RedisValue prev, RedisValue next) LookupRecord (int index) {
+                var listLength = Cache.ListLength (Identifier);
+
+                // if (index < 0 || index > listLength)
+                // throw new ArgumentException ("index out of range");
+
+                // var items = new RedisValue[];
+                // if (index == 0) {
+                //     items = Cache.ListRange (Identifier, 0, index + 1);
+                //     return (RedisValue.Null, items[1]);
+                // } else if (index == listLength) {
+                //     items = Cache.ListRange (Identifier, index - 1, -1);
+                //     return (items[0], RedisValue.Null);
+                // }
+
+                var items = Cache.ListRange (Identifier, index - 1, index + 1);
+                RedisValue prev = index == 0 ? RedisValue.Null : items.First ();
+                RedisValue next = index == listLength ? RedisValue.Null : items.Last ();
+                return (prev, next);
+
+                // if first
+                // prev should be null & next should be good
+
+                // if last
+                // prev should be good & next should be null
+
+                // else
+                //     both prev and next should be good
             }
         }
 
-        public class RedisSortedSet : Redis {
-            public RedisSortedSet (string identifier, IDatabase cache, MockedData data) : base (identifier, cache, data) { }
+        // public class RedisSortedSet : Redis {
+        //     public RedisSortedSet (string identifier, IDatabase cache, MockedData data) : base (identifier, cache, data) { }
 
-            public override void AddAllRecords () {
-                for (var i = 0; i < Records.Length; i++)
-                    Cache.SortedSetAdd (Identifier, Records[i], i);
-            }
+        //     public override void AddAllRecords () {
+        //         SortedSetEntry[] sortedSetRecords = Records.Select ((item, index) => new SortedSetEntry (item, index)).ToArray ();
+        //         Cache.SortedSetAdd (Identifier, sortedSetRecords);
+        //     }
 
-            public override void LookupRecord (int index) {
-                Cache.SortedSetRangeByScore (Identifier, index, index);
-            }
-        }
+        //     public override void LookupRecord (int index) {
+        //         Cache.SortedSetRangeByScore (Identifier, index, index);
+        //     }
+        // }
 
         public class MockedData {
             public long[] Records { get; set; }
@@ -112,6 +143,9 @@ namespace RedisExpirement {
                 for (var i = 0; i < Records.Length; i++) {
                     Records[i] = i * 100;
                 }
+
+                Random rnd = new Random ();
+                Records = Records.OrderBy (x => rnd.Next ()).ToArray ();
             }
         }
     }
